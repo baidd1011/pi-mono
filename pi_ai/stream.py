@@ -165,6 +165,57 @@ class AssistantMessageEventStream(EventStream[AssistantMessageEvent, AssistantMe
         self._start_info: dict[str, str] = {}
         self._done_info: dict[str, object] = {}
 
+    def push(self, event: AssistantMessageEvent) -> None:
+        """
+        Push an event to the stream and update internal buffers.
+
+        Args:
+            event: The event to push.
+        """
+        super().push(event)
+
+        # Update buffers based on event type
+        if event["type"] == "start":
+            self._start_info["api"] = event.get("api", "")
+            self._start_info["provider"] = event.get("provider", "")
+            self._start_info["model"] = event.get("model", "")
+
+        elif event["type"] == "textDelta":
+            index = event.get("index", 0)
+            delta = event.get("delta", "")
+            if index not in self._text_buffers:
+                self._text_buffers[index] = ""
+            self._text_buffers[index] += delta
+
+        elif event["type"] == "thinkingDelta":
+            index = event.get("index", 0)
+            delta = event.get("delta", "")
+            if index not in self._thinking_buffers:
+                self._thinking_buffers[index] = ""
+            self._thinking_buffers[index] += delta
+
+        elif event["type"] == "toolCallStart":
+            index = event.get("index", 0)
+            tc_id = event.get("id", "")
+            tc_name = event.get("name", "")
+            if index not in self._tool_call_buffers:
+                self._tool_call_buffers[index] = {"id": tc_id, "name": tc_name, "arguments": ""}
+
+        elif event["type"] == "toolCallDelta":
+            index = event.get("index", 0)
+            delta = event.get("delta", "")
+            if index in self._tool_call_buffers:
+                self._tool_call_buffers[index]["arguments"] += delta
+
+        elif event["type"] == "toolCallEnd":
+            index = event.get("index", 0)
+            # Tool call is complete, keep the buffer for building
+
+        elif event["type"] == "done":
+            self._done_info["response_id"] = event.get("response_id")
+            self._done_info["usage"] = event.get("usage", {})
+            self._done_info["stop_reason"] = event.get("stop_reason", "stop")
+
     def _build_message(self) -> AssistantMessage:
         """Build the final AssistantMessage from collected events."""
         content: list[TextContent | ThinkingContent | ToolCall] = []
@@ -192,21 +243,36 @@ class AssistantMessageEventStream(EventStream[AssistantMessageEvent, AssistantMe
             ))
 
         # Build usage from done event
-        usage_data = self._done_info.get("usage", {})
-        usage = Usage(
-            input_tokens=usage_data.get("input_tokens", 0),
-            output_tokens=usage_data.get("output_tokens", 0),
-            cache_read_tokens=usage_data.get("cache_read_tokens", 0),
-            cache_write_tokens=usage_data.get("cache_write_tokens", 0),
-            total_tokens=usage_data.get("total_tokens", 0),
-            cost=Usage.Cost(
-                input=usage_data.get("cost", {}).get("input", 0.0),
-                output=usage_data.get("cost", {}).get("output", 0.0),
-                cache_read=usage_data.get("cost", {}).get("cache_read", 0.0),
-                cache_write=usage_data.get("cost", {}).get("cache_write", 0.0),
-                total=usage_data.get("cost", {}).get("total", 0.0),
+        usage_data = self._done_info.get("usage")
+        if usage_data is None:
+            usage = Usage(
+                input_tokens=0,
+                output_tokens=0,
+                cache_read_tokens=0,
+                cache_write_tokens=0,
+                total_tokens=0,
+                cost=Usage.Cost(input=0.0, output=0.0, total=0.0),
             )
-        )
+        elif isinstance(usage_data, Usage):
+            # If it's already a Usage object, use it directly
+            usage = usage_data
+        else:
+            # If it's a dict, build Usage from it
+            usage_dict = usage_data
+            usage = Usage(
+                input_tokens=usage_dict.get("input_tokens", 0),
+                output_tokens=usage_dict.get("output_tokens", 0),
+                cache_read_tokens=usage_dict.get("cache_read_tokens", 0),
+                cache_write_tokens=usage_dict.get("cache_write_tokens", 0),
+                total_tokens=usage_dict.get("total_tokens", 0),
+                cost=Usage.Cost(
+                    input=usage_dict.get("cost", {}).get("input", 0.0) if isinstance(usage_dict.get("cost"), dict) else getattr(usage_dict.get("cost", Usage.Cost(input=0, output=0, total=0)), "input", 0.0),
+                    output=usage_dict.get("cost", {}).get("output", 0.0) if isinstance(usage_dict.get("cost"), dict) else getattr(usage_dict.get("cost", Usage.Cost(input=0, output=0, total=0)), "output", 0.0),
+                    cache_read=usage_dict.get("cost", {}).get("cache_read", 0.0) if isinstance(usage_dict.get("cost"), dict) else getattr(usage_dict.get("cost", Usage.Cost(input=0, output=0, total=0)), "cache_read", 0.0),
+                    cache_write=usage_dict.get("cost", {}).get("cache_write", 0.0) if isinstance(usage_dict.get("cost"), dict) else getattr(usage_dict.get("cost", Usage.Cost(input=0, output=0, total=0)), "cache_write", 0.0),
+                    total=usage_dict.get("cost", {}).get("total", 0.0) if isinstance(usage_dict.get("cost"), dict) else getattr(usage_dict.get("cost", Usage.Cost(input=0, output=0, total=0)), "total", 0.0),
+                )
+            )
 
         return AssistantMessage(
             content=content,
