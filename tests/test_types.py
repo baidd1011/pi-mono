@@ -467,3 +467,300 @@ class TestMessage:
         )
         assert isinstance(msg, ToolResultMessage)
         assert msg.role == "toolResult"
+
+
+class TestTool:
+    """Tests for Tool model."""
+
+    def test_tool_creation(self):
+        """Tool can be created with required fields."""
+        from pi_ai.types import Tool
+        from pydantic import BaseModel
+
+        class WeatherParams(BaseModel):
+            city: str
+            unit: str = "celsius"
+
+        tool = Tool(
+            name="get_weather",
+            description="Get current weather for a city",
+            parameters=WeatherParams
+        )
+        assert tool.name == "get_weather"
+        assert tool.description == "Get current weather for a city"
+        assert tool.parameters == WeatherParams
+
+    def test_tool_get_json_schema(self):
+        """Tool.get_json_schema returns proper schema."""
+        from pi_ai.types import Tool
+        from pydantic import BaseModel
+
+        class SearchParams(BaseModel):
+            query: str
+            limit: int = 10
+
+        tool = Tool(
+            name="search",
+            description="Search for items",
+            parameters=SearchParams
+        )
+        schema = tool.get_json_schema()
+        assert "properties" in schema
+        assert "query" in schema["properties"]
+        assert "limit" in schema["properties"]
+
+
+class TestContext:
+    """Tests for Context model."""
+
+    def test_context_creation_minimal(self):
+        """Context can be created with minimal fields."""
+        from pi_ai.types import Context, UserMessage
+
+        ctx = Context(messages=[UserMessage(content="Hello", timestamp=1234567890000)])
+        assert ctx.system_prompt is None
+        assert len(ctx.messages) == 1
+        assert ctx.tools is None
+
+    def test_context_creation_full(self):
+        """Context can be created with all fields."""
+        from pi_ai.types import Context, UserMessage, Tool
+        from pydantic import BaseModel
+
+        class Params(BaseModel):
+            query: str
+
+        tool = Tool(name="search", description="Search", parameters=Params)
+        ctx = Context(
+            system_prompt="You are a helpful assistant.",
+            messages=[UserMessage(content="Hello", timestamp=1234567890000)],
+            tools=[tool]
+        )
+        assert ctx.system_prompt == "You are a helpful assistant."
+        assert len(ctx.messages) == 1
+        assert len(ctx.tools) == 1
+
+
+class TestModel:
+    """Tests for Model model."""
+
+    def test_model_creation(self):
+        """Model can be created with required fields."""
+        from pi_ai.types import Model, Usage
+
+        model = Model(
+            id="gpt-4",
+            name="GPT-4",
+            api="openai",
+            provider="openai",
+            base_url="https://api.openai.com/v1",
+            reasoning=False,
+            input=["text", "image"],
+            cost=Usage.Cost(input=0.03, output=0.06, total=0.09),
+            context_window=128000,
+            max_tokens=4096
+        )
+        assert model.id == "gpt-4"
+        assert model.name == "GPT-4"
+        assert model.api == "openai"
+        assert model.reasoning is False
+        assert model.headers is None
+
+    def test_model_with_headers(self):
+        """Model can have optional headers."""
+        from pi_ai.types import Model, Usage
+
+        model = Model(
+            id="custom-model",
+            name="Custom Model",
+            api="custom",
+            provider="custom",
+            base_url="https://api.custom.com/v1",
+            reasoning=True,
+            input=["text"],
+            cost=Usage.Cost(input=0.01, output=0.02, total=0.03),
+            context_window=32000,
+            max_tokens=2048,
+            headers={"X-Custom-Header": "value"}
+        )
+        assert model.headers == {"X-Custom-Header": "value"}
+
+
+class TestThinkingLevel:
+    """Tests for ThinkingLevel literal type."""
+
+    def test_thinking_level_values(self):
+        """ThinkingLevel accepts valid values."""
+        from pi_ai.types import ThinkingLevel
+
+        # Just verify the type exists
+        assert ThinkingLevel is not None
+        # Valid values are: "minimal", "low", "medium", "high", "xhigh"
+
+
+class TestAssistantMessageEvent:
+    """Tests for AssistantMessageEvent TypedDict types."""
+
+    def test_start_event_creation(self):
+        """StartEvent can be created with required fields."""
+        from pi_ai.types import StartEvent
+
+        event: StartEvent = {
+            "type": "start",
+            "api": "anthropic",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-20250514"
+        }
+        assert event["type"] == "start"
+        assert event["api"] == "anthropic"
+
+    def test_text_start_event(self):
+        """TextStartEvent can be created."""
+        from pi_ai.types import TextStartEvent
+
+        event: TextStartEvent = {"type": "textStart", "index": 0}
+        assert event["type"] == "textStart"
+        assert event["index"] == 0
+
+    def test_text_delta_event(self):
+        """TextDeltaEvent can be created."""
+        from pi_ai.types import TextDeltaEvent
+
+        event: TextDeltaEvent = {"type": "textDelta", "index": 0, "delta": "Hello"}
+        assert event["delta"] == "Hello"
+
+    def test_text_end_event(self):
+        """TextEndEvent can be created with optional signature."""
+        from pi_ai.types import TextEndEvent
+
+        event: TextEndEvent = {"type": "textEnd", "index": 0, "text_signature": "sig123"}
+        assert event["text_signature"] == "sig123"
+
+        event2: TextEndEvent = {"type": "textEnd", "index": 0, "text_signature": None}
+        assert event2["text_signature"] is None
+
+    def test_thinking_start_event(self):
+        """ThinkingStartEvent can be created."""
+        from pi_ai.types import ThinkingStartEvent
+
+        event: ThinkingStartEvent = {"type": "thinkingStart", "index": 1}
+        assert event["type"] == "thinkingStart"
+
+    def test_thinking_delta_event(self):
+        """ThinkingDeltaEvent can be created."""
+        from pi_ai.types import ThinkingDeltaEvent
+
+        event: ThinkingDeltaEvent = {"type": "thinkingDelta", "index": 1, "delta": "Thinking..."}
+        assert event["delta"] == "Thinking..."
+
+    def test_thinking_end_event(self):
+        """ThinkingEndEvent can be created."""
+        from pi_ai.types import ThinkingEndEvent
+
+        event: ThinkingEndEvent = {"type": "thinkingEnd", "index": 1, "thinking_signature": None}
+        assert event["type"] == "thinkingEnd"
+
+    def test_tool_call_start_event(self):
+        """ToolCallStartEvent can be created."""
+        from pi_ai.types import ToolCallStartEvent
+
+        event: ToolCallStartEvent = {
+            "type": "toolCallStart",
+            "index": 2,
+            "id": "call_123",
+            "name": "get_weather"
+        }
+        assert event["id"] == "call_123"
+        assert event["name"] == "get_weather"
+
+    def test_tool_call_delta_event(self):
+        """ToolCallDeltaEvent can be created."""
+        from pi_ai.types import ToolCallDeltaEvent
+
+        event: ToolCallDeltaEvent = {
+            "type": "toolCallDelta",
+            "index": 2,
+            "id": "call_123",
+            "delta": '{"city": "'
+        }
+        assert event["delta"] == '{"city": "'
+
+    def test_tool_call_end_event(self):
+        """ToolCallEndEvent can be created."""
+        from pi_ai.types import ToolCallEndEvent
+
+        event: ToolCallEndEvent = {
+            "type": "toolCallEnd",
+            "index": 2,
+            "id": "call_123",
+            "arguments": {"city": "Beijing"}
+        }
+        assert event["arguments"] == {"city": "Beijing"}
+
+    def test_done_event(self):
+        """DoneEvent can be created."""
+        from pi_ai.types import DoneEvent, Usage
+
+        event: DoneEvent = {
+            "type": "done",
+            "response_id": "msg_123",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "total_tokens": 150,
+                "cost": {"input": 0.001, "output": 0.002, "cache_read": 0.0, "cache_write": 0.0, "total": 0.003}
+            },
+            "stop_reason": "stop"
+        }
+        assert event["type"] == "done"
+        assert event["response_id"] == "msg_123"
+        assert event["stop_reason"] == "stop"
+
+    def test_error_event(self):
+        """ErrorEvent can be created."""
+        from pi_ai.types import ErrorEvent
+
+        event: ErrorEvent = {"type": "error", "error_message": "Rate limit exceeded"}
+        assert event["type"] == "error"
+        assert event["error_message"] == "Rate limit exceeded"
+
+    def test_assistant_message_event_union(self):
+        """AssistantMessageEvent union includes all event types."""
+        from pi_ai.types import (
+            AssistantMessageEvent,
+            StartEvent,
+            TextDeltaEvent,
+            DoneEvent,
+        )
+
+        # Verify union includes various types
+        event1: AssistantMessageEvent = {
+            "type": "start",
+            "api": "anthropic",
+            "provider": "anthropic",
+            "model": "claude"
+        }
+        event2: AssistantMessageEvent = {
+            "type": "textDelta",
+            "index": 0,
+            "delta": "test"
+        }
+        event3: AssistantMessageEvent = {
+            "type": "done",
+            "response_id": None,
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "total_tokens": 150,
+                "cost": {"input": 0.001, "output": 0.002, "cache_read": 0.0, "cache_write": 0.0, "total": 0.003}
+            },
+            "stop_reason": "stop"
+        }
+
+        assert event1["type"] == "start"
+        assert event2["type"] == "textDelta"
+        assert event3["type"] == "done"

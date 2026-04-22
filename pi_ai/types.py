@@ -5,7 +5,7 @@ These Pydantic models represent the various content types that can appear
 in LLM messages: text, thinking/reasoning, images, and tool calls.
 """
 
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -125,3 +125,166 @@ class ToolResultMessage(BaseModel):
 
 # Union type for all messages
 Message = Union[UserMessage, AssistantMessage, ToolResultMessage]
+
+
+# -----------------------------------------------------------------------------
+# Tool and Context Types (Task 4)
+# -----------------------------------------------------------------------------
+
+class Tool(BaseModel):
+    """Tool definition for LLM function calling."""
+
+    name: str
+    description: str
+    parameters: type[BaseModel]  # Pydantic model for schema
+
+    def get_json_schema(self) -> dict:
+        """Get JSON schema for the tool parameters."""
+        return self.parameters.model_json_schema()
+
+
+class Context(BaseModel):
+    """Conversation context for LLM API calls."""
+
+    system_prompt: Optional[str] = Field(default=None)
+    messages: list[Message]
+    tools: Optional[list[Tool]] = Field(default=None)
+
+
+class Model(BaseModel):
+    """Model configuration and metadata."""
+
+    id: str
+    name: str
+    api: str
+    provider: str
+    base_url: str
+    reasoning: bool
+    input: list[Literal["text", "image"]]
+    cost: Usage.Cost
+    context_window: int
+    max_tokens: int
+    headers: Optional[dict[str, str]] = Field(default=None)
+
+
+# Thinking level for reasoning models
+ThinkingLevel = Literal["minimal", "low", "medium", "high", "xhigh"]
+
+
+# -----------------------------------------------------------------------------
+# AssistantMessageEvent Types (Task 7)
+# -----------------------------------------------------------------------------
+
+class StartEvent(TypedDict):
+    """Event emitted when a message stream starts."""
+
+    type: Literal["start"]
+    api: str
+    provider: str
+    model: str
+
+
+class TextStartEvent(TypedDict):
+    """Event emitted when a text content block starts."""
+
+    type: Literal["textStart"]
+    index: int
+
+
+class TextDeltaEvent(TypedDict):
+    """Event emitted for text content delta."""
+
+    type: Literal["textDelta"]
+    index: int
+    delta: str
+
+
+class TextEndEvent(TypedDict):
+    """Event emitted when a text content block ends."""
+
+    type: Literal["textEnd"]
+    index: int
+    text_signature: Optional[str]
+
+
+class ThinkingStartEvent(TypedDict):
+    """Event emitted when a thinking content block starts."""
+
+    type: Literal["thinkingStart"]
+    index: int
+
+
+class ThinkingDeltaEvent(TypedDict):
+    """Event emitted for thinking content delta."""
+
+    type: Literal["thinkingDelta"]
+    index: int
+    delta: str
+
+
+class ThinkingEndEvent(TypedDict):
+    """Event emitted when a thinking content block ends."""
+
+    type: Literal["thinkingEnd"]
+    index: int
+    thinking_signature: Optional[str]
+
+
+class ToolCallStartEvent(TypedDict):
+    """Event emitted when a tool call block starts."""
+
+    type: Literal["toolCallStart"]
+    index: int
+    id: str
+    name: str
+
+
+class ToolCallDeltaEvent(TypedDict):
+    """Event emitted for tool call argument delta."""
+
+    type: Literal["toolCallDelta"]
+    index: int
+    id: str
+    delta: str
+
+
+class ToolCallEndEvent(TypedDict):
+    """Event emitted when a tool call block ends."""
+
+    type: Literal["toolCallEnd"]
+    index: int
+    id: str
+    arguments: dict[str, Any]
+
+
+class DoneEvent(TypedDict):
+    """Event emitted when the message stream is complete."""
+
+    type: Literal["done"]
+    response_id: Optional[str]
+    usage: Usage
+    stop_reason: StopReason
+
+
+class ErrorEvent(TypedDict):
+    """Event emitted when an error occurs during streaming."""
+
+    type: Literal["error"]
+    error_message: str
+
+
+# Union type for all assistant message events
+AssistantMessageEvent = Union[
+    StartEvent,
+    TextStartEvent,
+    TextDeltaEvent,
+    TextEndEvent,
+    ThinkingStartEvent,
+    ThinkingDeltaEvent,
+    ThinkingEndEvent,
+    ToolCallStartEvent,
+    ToolCallDeltaEvent,
+    ToolCallEndEvent,
+    DoneEvent,
+    ErrorEvent,
+]
