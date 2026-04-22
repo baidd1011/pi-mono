@@ -1,0 +1,1 @@
+# ProviderInterface base class - will be populated in Task 12

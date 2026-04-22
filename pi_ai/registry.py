@@ -1,0 +1,1 @@
+# pi-ai provider registry - will be populated in Task 9
