@@ -108,6 +108,18 @@ class Agent:
         self.max_retry_delay_ms = options.max_retry_delay_ms
         self.tool_execution = options.tool_execution
 
+        # Event subscription
+        self._listeners: List[Callable[[AgentEvent, AbortSignal], Awaitable[None] | None]] = []
+
+        # Message queues
+        self._steering_queue: List[AgentMessage] = []
+        self._steering_mode: Literal["all", "one-at-a-time"] = options.steering_mode
+        self._follow_up_queue: List[AgentMessage] = []
+        self._follow_up_mode: Literal["all", "one-at-a-time"] = options.follow_up_mode
+
+        # Active run tracking
+        self._active_run: Optional[dict] = None
+
     def _default_convert_to_llm(self, messages: List[AgentMessage]) -> List[Any]:
         """Default message conversion."""
         # Filter messages by valid roles - use attribute access for Pydantic models
@@ -148,3 +160,119 @@ class Agent:
     def set_messages(self, messages: List[AgentMessage]) -> None:
         """Set the messages list."""
         self._state.messages = messages
+
+    # -------------------------------------------------------------------------
+    # Event Subscription
+    # -------------------------------------------------------------------------
+
+    def subscribe(self, listener: Callable[[AgentEvent, AbortSignal], Awaitable[None] | None]) -> Callable[[], None]:
+        """Subscribe to agent events. Returns unsubscribe function."""
+        self._listeners.append(listener)
+        return lambda: self._listeners.remove(listener) if listener in self._listeners else None
+
+    async def _emit_event(self, event: AgentEvent) -> None:
+        """Emit event to all listeners."""
+        signal = self._active_run.get("abort_controller").signal if self._active_run else None
+        for listener in self._listeners:
+            result = listener(event, signal)
+            if isinstance(result, Awaitable):
+                await result
+
+    # -------------------------------------------------------------------------
+    # Message Queues
+    # -------------------------------------------------------------------------
+
+    def steer(self, message: AgentMessage) -> None:
+        """Queue message to inject after current assistant turn."""
+        self._steering_queue.append(message)
+
+    def follow_up(self, message: AgentMessage) -> None:
+        """Queue message for after agent would otherwise stop."""
+        self._follow_up_queue.append(message)
+
+    def clear_steering_queue(self) -> None:
+        """Clear the steering queue."""
+        self._steering_queue.clear()
+
+    def clear_follow_up_queue(self) -> None:
+        """Clear the follow-up queue."""
+        self._follow_up_queue.clear()
+
+    def clear_all_queues(self) -> None:
+        """Clear both steering and follow-up queues."""
+        self.clear_steering_queue()
+        self.clear_follow_up_queue()
+
+    def has_queued_messages(self) -> bool:
+        """Check if there are any queued messages."""
+        return len(self._steering_queue) > 0 or len(self._follow_up_queue) > 0
+
+    @property
+    def steering_mode(self) -> Literal["all", "one-at-a-time"]:
+        """Get steering mode."""
+        return self._steering_mode
+
+    @steering_mode.setter
+    def steering_mode(self, mode: Literal["all", "one-at-a-time"]) -> None:
+        """Set steering mode."""
+        self._steering_mode = mode
+
+    @property
+    def follow_up_mode(self) -> Literal["all", "one-at-a-time"]:
+        """Get follow-up mode."""
+        return self._follow_up_mode
+
+    @follow_up_mode.setter
+    def follow_up_mode(self, mode: Literal["all", "one-at-a-time"]) -> None:
+        """Set follow-up mode."""
+        self._follow_up_mode = mode
+
+    def _drain_steering(self) -> List[AgentMessage]:
+        """Drain steering queue based on mode."""
+        if self._steering_mode == "all":
+            result = self._steering_queue.copy()
+            self._steering_queue.clear()
+            return result
+
+        if self._steering_queue:
+            return [self._steering_queue.pop(0)]
+        return []
+
+    def _drain_follow_up(self) -> List[AgentMessage]:
+        """Drain follow-up queue based on mode."""
+        if self._follow_up_mode == "all":
+            result = self._follow_up_queue.copy()
+            self._follow_up_queue.clear()
+            return result
+
+        if self._follow_up_queue:
+            return [self._follow_up_queue.pop(0)]
+        return []
+
+    # -------------------------------------------------------------------------
+    # Abort Handling
+    # -------------------------------------------------------------------------
+
+    @property
+    def signal(self) -> Optional[AbortSignal]:
+        """Active abort signal for current run."""
+        return self._active_run.get("abort_controller").signal if self._active_run else None
+
+    def abort(self) -> None:
+        """Abort the current run."""
+        if self._active_run:
+            self._active_run["abort_controller"].abort()
+
+    async def wait_for_idle(self) -> None:
+        """Wait for current run to finish."""
+        if self._active_run:
+            await self._active_run["promise"]
+
+    def reset(self) -> None:
+        """Clear state and queues."""
+        self._state._messages = []
+        self._state.is_streaming = False
+        self._state.streaming_message = None
+        self._state.pending_tool_calls = set()
+        self._state.error_message = None
+        self.clear_all_queues()

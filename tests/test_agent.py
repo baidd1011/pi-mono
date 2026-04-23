@@ -410,3 +410,413 @@ class TestAgentOptionsModes:
 
         options = AgentOptions()
         assert options.transport == "sse"
+
+
+class TestAgentEventSubscription:
+    """Tests for Agent event subscription system."""
+
+    def test_subscribe_returns_unsubscribe_function(self):
+        """subscribe returns a callable that removes the listener."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+
+        call_count = 0
+
+        def listener(event, signal):
+            nonlocal call_count
+            call_count += 1
+
+        unsubscribe = agent.subscribe(listener)
+
+        # Listener is registered
+        assert callable(unsubscribe)
+
+        # Unsubscribe removes the listener
+        unsubscribe()
+        # Should not raise - listener is removed
+
+    def test_unsubscribe_is_idempotent(self):
+        """Calling unsubscribe multiple times is safe."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+
+        def listener(event, signal):
+            pass
+
+        unsubscribe = agent.subscribe(listener)
+        unsubscribe()
+        unsubscribe()  # Should not raise
+
+    def test_emit_event_calls_listeners(self):
+        """_emit_event calls all registered listeners."""
+        from pi_agent_core.agent import Agent
+        from pi_agent_core.types import TurnStartEvent
+
+        agent = Agent()
+        events_received = []
+
+        def listener1(event, signal):
+            events_received.append(("listener1", event))
+
+        def listener2(event, signal):
+            events_received.append(("listener2", event))
+
+        agent.subscribe(listener1)
+        agent.subscribe(listener2)
+
+        import asyncio
+        event = TurnStartEvent(type="turn_start")
+        asyncio.run(agent._emit_event(event))
+
+        assert len(events_received) == 2
+        assert events_received[0][0] == "listener1"
+        assert events_received[1][0] == "listener2"
+        assert events_received[0][1]["type"] == "turn_start"
+
+    def test_emit_event_with_async_listener(self):
+        """_emit_event handles async listeners."""
+        from pi_agent_core.agent import Agent
+        from pi_agent_core.types import TurnStartEvent
+
+        agent = Agent()
+        events_received = []
+
+        async def async_listener(event, signal):
+            events_received.append(("async", event))
+
+        agent.subscribe(async_listener)
+
+        import asyncio
+        event = TurnStartEvent(type="turn_start")
+        asyncio.run(agent._emit_event(event))
+
+        assert len(events_received) == 1
+        assert events_received[0][0] == "async"
+
+
+class TestAgentMessageQueues:
+    """Tests for Agent message queue methods."""
+
+    def test_steer_queues_message(self):
+        """steer queues a message to steering queue."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import UserMessage
+
+        agent = Agent()
+        msg = UserMessage(role="user", content="Steer this", timestamp=1000)
+
+        agent.steer(msg)
+
+        assert agent.has_queued_messages() is True
+
+    def test_follow_up_queues_message(self):
+        """follow_up queues a message to follow-up queue."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import UserMessage
+
+        agent = Agent()
+        msg = UserMessage(role="user", content="Follow up", timestamp=1000)
+
+        agent.follow_up(msg)
+
+        assert agent.has_queued_messages() is True
+
+    def test_clear_steering_queue(self):
+        """clear_steering_queue empties the steering queue."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import UserMessage
+
+        agent = Agent()
+        agent.steer(UserMessage(role="user", content="msg1", timestamp=1000))
+        agent.steer(UserMessage(role="user", content="msg2", timestamp=2000))
+
+        agent.clear_steering_queue()
+
+        # After clear, draining should return empty
+        result = agent._drain_steering()
+        assert result == []
+
+    def test_clear_follow_up_queue(self):
+        """clear_follow_up_queue empties the follow-up queue."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import UserMessage
+
+        agent = Agent()
+        agent.follow_up(UserMessage(role="user", content="msg1", timestamp=1000))
+        agent.follow_up(UserMessage(role="user", content="msg2", timestamp=2000))
+
+        agent.clear_follow_up_queue()
+
+        result = agent._drain_follow_up()
+        assert result == []
+
+    def test_clear_all_queues(self):
+        """clear_all_queues empties both queues."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import UserMessage
+
+        agent = Agent()
+        agent.steer(UserMessage(role="user", content="steer", timestamp=1000))
+        agent.follow_up(UserMessage(role="user", content="follow", timestamp=2000))
+
+        agent.clear_all_queues()
+
+        assert agent.has_queued_messages() is False
+
+    def test_has_queued_messages(self):
+        """has_queued_messages returns correct status."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import UserMessage
+
+        agent = Agent()
+
+        assert agent.has_queued_messages() is False
+
+        agent.steer(UserMessage(role="user", content="steer", timestamp=1000))
+        assert agent.has_queued_messages() is True
+
+        agent.clear_all_queues()
+        assert agent.has_queued_messages() is False
+
+        agent.follow_up(UserMessage(role="user", content="follow", timestamp=2000))
+        assert agent.has_queued_messages() is True
+
+
+class TestAgentQueueModes:
+    """Tests for steering and follow-up queue modes."""
+
+    def test_steering_mode_default(self):
+        """Default steering mode is one-at-a-time."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        assert agent.steering_mode == "one-at-a-time"
+
+    def test_follow_up_mode_default(self):
+        """Default follow-up mode is one-at-a-time."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        assert agent.follow_up_mode == "one-at-a-time"
+
+    def test_steering_mode_can_be_set(self):
+        """steering_mode can be set to all or one-at-a-time."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+
+        agent.steering_mode = "all"
+        assert agent.steering_mode == "all"
+
+        agent.steering_mode = "one-at-a-time"
+        assert agent.steering_mode == "one-at-a-time"
+
+    def test_follow_up_mode_can_be_set(self):
+        """follow_up_mode can be set to all or one-at-a-time."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+
+        agent.follow_up_mode = "all"
+        assert agent.follow_up_mode == "all"
+
+        agent.follow_up_mode = "one-at-a-time"
+        assert agent.follow_up_mode == "one-at-a-time"
+
+    def test_drain_steering_all_mode(self):
+        """_drain_steering returns all messages in 'all' mode."""
+        from pi_agent_core.agent import Agent, AgentOptions
+        from pi_ai import UserMessage
+
+        agent = Agent(AgentOptions(steering_mode="all"))
+        agent.steer(UserMessage(role="user", content="msg1", timestamp=1000))
+        agent.steer(UserMessage(role="user", content="msg2", timestamp=2000))
+        agent.steer(UserMessage(role="user", content="msg3", timestamp=3000))
+
+        result = agent._drain_steering()
+
+        assert len(result) == 3
+        assert result[0].content == "msg1"
+        assert result[1].content == "msg2"
+        assert result[2].content == "msg3"
+
+        # Queue should be empty after drain
+        assert agent._drain_steering() == []
+
+    def test_drain_steering_one_at_a_time_mode(self):
+        """_drain_steering returns one message in 'one-at-a-time' mode."""
+        from pi_agent_core.agent import Agent, AgentOptions
+        from pi_ai import UserMessage
+
+        agent = Agent(AgentOptions(steering_mode="one-at-a-time"))
+        agent.steer(UserMessage(role="user", content="msg1", timestamp=1000))
+        agent.steer(UserMessage(role="user", content="msg2", timestamp=2000))
+        agent.steer(UserMessage(role="user", content="msg3", timestamp=3000))
+
+        # First drain should return only first message
+        result1 = agent._drain_steering()
+        assert len(result1) == 1
+        assert result1[0].content == "msg1"
+
+        # Second drain should return second message
+        result2 = agent._drain_steering()
+        assert len(result2) == 1
+        assert result2[0].content == "msg2"
+
+        # Third drain should return third message
+        result3 = agent._drain_steering()
+        assert len(result3) == 1
+        assert result3[0].content == "msg3"
+
+        # Fourth drain should return empty
+        result4 = agent._drain_steering()
+        assert result4 == []
+
+    def test_drain_follow_up_all_mode(self):
+        """_drain_follow_up returns all messages in 'all' mode."""
+        from pi_agent_core.agent import Agent, AgentOptions
+        from pi_ai import UserMessage
+
+        agent = Agent(AgentOptions(follow_up_mode="all"))
+        agent.follow_up(UserMessage(role="user", content="msg1", timestamp=1000))
+        agent.follow_up(UserMessage(role="user", content="msg2", timestamp=2000))
+
+        result = agent._drain_follow_up()
+
+        assert len(result) == 2
+        assert result[0].content == "msg1"
+        assert result[1].content == "msg2"
+
+        # Queue should be empty after drain
+        assert agent._drain_follow_up() == []
+
+    def test_drain_follow_up_one_at_a_time_mode(self):
+        """_drain_follow_up returns one message in 'one-at-a-time' mode."""
+        from pi_agent_core.agent import Agent, AgentOptions
+        from pi_ai import UserMessage
+
+        agent = Agent(AgentOptions(follow_up_mode="one-at-a-time"))
+        agent.follow_up(UserMessage(role="user", content="msg1", timestamp=1000))
+        agent.follow_up(UserMessage(role="user", content="msg2", timestamp=2000))
+
+        # First drain returns first message
+        result1 = agent._drain_follow_up()
+        assert len(result1) == 1
+        assert result1[0].content == "msg1"
+
+        # Second drain returns second message
+        result2 = agent._drain_follow_up()
+        assert len(result2) == 1
+        assert result2[0].content == "msg2"
+
+        # Third drain returns empty
+        result3 = agent._drain_follow_up()
+        assert result3 == []
+
+    def test_drain_steering_empty_queue(self):
+        """_drain_steering returns empty list when queue is empty."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        result = agent._drain_steering()
+        assert result == []
+
+    def test_drain_follow_up_empty_queue(self):
+        """_drain_follow_up returns empty list when queue is empty."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        result = agent._drain_follow_up()
+        assert result == []
+
+
+class TestAgentAbortHandling:
+    """Tests for Agent abort handling."""
+
+    def test_signal_is_none_when_not_running(self):
+        """signal property is None when agent is not running."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        assert agent.signal is None
+
+    def test_abort_does_nothing_when_not_running(self):
+        """abort() is safe to call when agent is not running."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        agent.abort()  # Should not raise
+
+    def test_wait_for_idle_when_not_running(self):
+        """wait_for_idle completes immediately when not running."""
+        from pi_agent_core.agent import Agent
+        import asyncio
+
+        agent = Agent()
+        # Should complete immediately without waiting
+        asyncio.run(agent.wait_for_idle())
+
+    def test_reset_clears_messages(self):
+        """reset() clears agent state and queues."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import UserMessage
+
+        agent = Agent()
+        agent.set_messages([UserMessage(role="user", content="Hello", timestamp=1000)])
+        agent.steer(UserMessage(role="user", content="Steer", timestamp=2000))
+        agent.follow_up(UserMessage(role="user", content="Follow", timestamp=3000))
+
+        agent.reset()
+
+        assert agent.state.messages == []
+        assert agent.has_queued_messages() is False
+
+    def test_reset_clears_streaming_state(self):
+        """reset() clears streaming state."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        # Manually set streaming state (normally set during run)
+        agent._state.is_streaming = True
+        agent._state.streaming_message = "some message"
+        agent._state.pending_tool_calls = {"call_1"}
+        agent._state.error_message = "some error"
+
+        agent.reset()
+
+        assert agent.state.is_streaming is False
+        assert agent.state.streaming_message is None
+        assert agent.state.pending_tool_calls == frozenset()
+        assert agent.state.error_message is None
+
+    def test_reset_clears_system_prompt(self):
+        """reset() does NOT clear system prompt (only messages and queues)."""
+        from pi_agent_core.agent import Agent
+
+        agent = Agent()
+        agent.set_system_prompt("You are helpful")
+
+        agent.reset()
+
+        # System prompt should remain
+        assert agent.state.system_prompt == "You are helpful"
+
+
+class TestAgentOptionsModesFromOptions:
+    """Tests that Agent initializes modes from AgentOptions."""
+
+    def test_agent_initializes_steering_mode_from_options(self):
+        """Agent reads steering_mode from AgentOptions."""
+        from pi_agent_core.agent import Agent, AgentOptions
+
+        agent = Agent(AgentOptions(steering_mode="all"))
+        assert agent.steering_mode == "all"
+
+    def test_agent_initializes_follow_up_mode_from_options(self):
+        """Agent reads follow_up_mode from AgentOptions."""
+        from pi_agent_core.agent import Agent, AgentOptions
+
+        agent = Agent(AgentOptions(follow_up_mode="all"))
+        assert agent.follow_up_mode == "all"
