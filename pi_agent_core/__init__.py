@@ -9,6 +9,16 @@ from pi_agent_core.types import (
     AgentToolCall,
     ToolExecutionMode,
     AgentToolUpdateCallback,
+    AgentState,
+    AgentContext,
+    ThinkingLevel,
+)
+
+# Agent class
+from pi_agent_core.agent import (
+    Agent,
+    AgentOptions,
+    DEFAULT_MODEL,
 )
 
 __version__ = "0.1.0"
@@ -19,4 +29,10 @@ __all__ = [
     "AgentToolCall",
     "ToolExecutionMode",
     "AgentToolUpdateCallback",
+    "AgentState",
+    "AgentContext",
+    "ThinkingLevel",
+    "Agent",
+    "AgentOptions",
+    "DEFAULT_MODEL",
 ]

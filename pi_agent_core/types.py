@@ -93,7 +93,7 @@ class AgentTool[TParameters, TDetails]:
 # Agent State
 # -----------------------------------------------------------------------------
 
-@dataclass
+@dataclass(frozen=True)
 class AgentState:
     """Public agent state (read-only snapshot)."""
     system_prompt: str
