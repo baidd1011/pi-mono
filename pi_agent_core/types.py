@@ -11,13 +11,14 @@ This module defines types for the agent runtime:
 - ThinkingLevel: Levels for reasoning/thinking capabilities
 - AgentState: Read-only snapshot of agent's current state
 - AgentContext: Context passed into agent loop for LLM calls
+- AgentLoopConfig: Configuration for agent loop execution
 """
 
 from typing import Any, Callable, Awaitable, Optional, Union, Literal, List, FrozenSet
 from typing import TypedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from pi_ai import TextContent, ImageContent, Model
+from pi_ai import TextContent, ImageContent, Model, AssistantMessageEventStream, Context
 
 
 # -----------------------------------------------------------------------------
@@ -121,6 +122,79 @@ class AgentContext:
     system_prompt: str
     messages: List[Any]  # List[AgentMessage]
     tools: Optional[List[Any]] = None  # List[AgentTool]
+
+
+# -----------------------------------------------------------------------------
+# Agent Loop Configuration Types
+# -----------------------------------------------------------------------------
+
+@dataclass
+class BeforeToolCallResult:
+    """Result returned from before_tool_call hook."""
+    block: bool = False
+    reason: Optional[str] = None
+
+
+@dataclass
+class AfterToolCallResult:
+    """Partial override returned from after_tool_call hook."""
+    content: Optional[List[Union[TextContent, ImageContent]]] = None
+    details: Optional[Any] = None
+    is_error: Optional[bool] = None
+
+
+@dataclass
+class BeforeToolCallContext:
+    """Context passed to before_tool_call hook."""
+    assistant_message: Any  # AssistantMessage
+    tool_call: AgentToolCall
+    args: Any  # Validated arguments
+    context: AgentContext
+
+
+@dataclass
+class AfterToolCallContext:
+    """Context passed to after_tool_call hook."""
+    assistant_message: Any  # AssistantMessage
+    tool_call: AgentToolCall
+    args: Any  # Validated arguments
+    result: AgentToolResult
+    is_error: bool
+    context: AgentContext
+
+
+# Stream function type
+StreamFn = Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]
+
+
+@dataclass
+class AgentLoopConfig:
+    """Configuration for agent loop execution."""
+    model: Model
+
+    # Message transformation - must not throw/reject
+    convert_to_llm: Callable[[List[Any]], Union[List[Any], Awaitable[List[Any]]]]
+
+    # Optional context transform before convert_to_llm
+    transform_context: Optional[Callable[[List[Any], Optional[Any]], Awaitable[List[Any]]]] = None
+
+    # API key resolution for expiring tokens
+    get_api_key: Optional[Callable[[str], Union[str, Awaitable[str]]]] = None
+
+    # Message queues
+    get_steering_messages: Optional[Callable[[], Awaitable[List[Any]]]] = None
+    get_follow_up_messages: Optional[Callable[[], Awaitable[List[Any]]]] = None
+
+    # Tool execution mode
+    tool_execution: ToolExecutionMode = "parallel"
+
+    # Tool execution hooks
+    before_tool_call: Optional[Callable[[BeforeToolCallContext, Optional[Any]], Awaitable[Optional[BeforeToolCallResult]]]] = None
+    after_tool_call: Optional[Callable[[AfterToolCallContext, Optional[Any]], Awaitable[Optional[AfterToolCallResult]]]] = None
+
+    # Additional stream options
+    api_key: Optional[str] = None
+    thinking_level: Optional[ThinkingLevel] = None
 
 
 # -----------------------------------------------------------------------------
