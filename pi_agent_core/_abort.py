@@ -32,6 +32,10 @@ class AbortSignal:
             await future
         except asyncio.CancelledError:
             pass
+        finally:
+            # Remove from waiters if still present (already aborted clears list)
+            if future in self._waiters:
+                self._waiters.remove(future)
 
     def _notify_abort(self) -> None:
         """Notify all waiters of abort."""
