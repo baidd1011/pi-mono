@@ -249,3 +249,119 @@ class TestAgentTool:
         assert len(updates) == 2
         assert updates[0].content[0].text == "Partial 1"
         assert updates[1].content[0].text == "Partial 2"
+
+
+class TestAgentState:
+    """Tests for AgentState model."""
+
+    def test_agent_state_creation(self):
+        """AgentState holds current agent state."""
+        from pi_agent_core.types import AgentState
+        from pi_ai import Model, Usage
+
+        model = Model(
+            id="gpt-4o", name="GPT-4o", api="openai", provider="openai",
+            base_url="https://api.openai.com/v1", reasoning=False,
+            input=["text"], cost=Usage.Cost(input=5, output=15, cache_read=0, cache_write=0, total=20),
+            context_window=128000, max_tokens=4096
+        )
+
+        state = AgentState(
+            system_prompt="Hello",
+            model=model,
+            thinking_level="off",
+            tools=[],
+            messages=[],
+            is_streaming=False,
+            streaming_message=None,
+            pending_tool_calls=frozenset(),
+            error_message=None
+        )
+
+        assert state.system_prompt == "Hello"
+        assert state.is_streaming is False
+
+    def test_agent_state_with_tools_and_messages(self):
+        """AgentState can hold tools and messages."""
+        from pi_agent_core.types import AgentState, AgentTool, AgentToolResult
+        from pi_ai import Model, Usage, TextContent
+
+        model = Model(
+            id="gpt-4o", name="GPT-4o", api="openai", provider="openai",
+            base_url="https://api.openai.com/v1", reasoning=False,
+            input=["text"], cost=Usage.Cost(input=5, output=15, cache_read=0, cache_write=0, total=20),
+            context_window=128000, max_tokens=4096
+        )
+
+        async def execute(tool_call_id, args, signal, update_cb):
+            return AgentToolResult(content=[TextContent(text="Done")], details=None)
+
+        tool = AgentTool(
+            name="test_tool",
+            label="Test Tool",
+            description="A test tool",
+            parameters={"type": "object"},
+            execute=execute
+        )
+
+        state = AgentState(
+            system_prompt="System prompt",
+            model=model,
+            thinking_level="medium",
+            tools=[tool],
+            messages=[],
+            is_streaming=True,
+            streaming_message=None,
+            pending_tool_calls=frozenset(["call_123"]),
+            error_message="Something went wrong"
+        )
+
+        assert len(state.tools) == 1
+        assert state.tools[0].name == "test_tool"
+        assert state.thinking_level == "medium"
+        assert state.is_streaming is True
+        assert "call_123" in state.pending_tool_calls
+        assert state.error_message == "Something went wrong"
+
+
+class TestAgentContext:
+    """Tests for AgentContext model."""
+
+    def test_agent_context_creation(self):
+        """AgentContext holds context for LLM calls."""
+        from pi_agent_core.types import AgentContext
+
+        context = AgentContext(
+            system_prompt="You are a helpful assistant",
+            messages=[]
+        )
+
+        assert context.system_prompt == "You are a helpful assistant"
+        assert context.messages == []
+        assert context.tools is None
+
+    def test_agent_context_with_tools(self):
+        """AgentContext can include tools."""
+        from pi_agent_core.types import AgentContext, AgentTool, AgentToolResult
+        from pi_ai import TextContent
+
+        async def execute(tool_call_id, args, signal, update_cb):
+            return AgentToolResult(content=[TextContent(text="Done")], details=None)
+
+        tool = AgentTool(
+            name="get_weather",
+            label="Get Weather",
+            description="Get weather info",
+            parameters={"type": "object"},
+            execute=execute
+        )
+
+        context = AgentContext(
+            system_prompt="Helpful assistant",
+            messages=[],
+            tools=[tool]
+        )
+
+        assert context.tools is not None
+        assert len(context.tools) == 1
+        assert context.tools[0].name == "get_weather"
