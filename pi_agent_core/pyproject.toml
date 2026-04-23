@@ -1,12 +1,10 @@
 [project]
-name = "pi-ai"
+name = "pi-agent-core"
 version = "0.1.0"
-description = "Unified LLM API with streaming support for Bailian and OpenAI"
+description = "Agent runtime with state management, event system, tool execution"
 requires-python = ">=3.10"
 dependencies = [
-    "pydantic>=2.0",
-    "httpx>=0.25",
-    "openai>=1.0",
+    "pi-ai",
 ]
 
 [project.optional-dependencies]
