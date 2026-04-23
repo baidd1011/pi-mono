@@ -365,3 +365,175 @@ class TestAgentContext:
         assert context.tools is not None
         assert len(context.tools) == 1
         assert context.tools[0].name == "get_weather"
+
+
+class TestAgentEventTypes:
+    """Tests for AgentEvent types."""
+
+    def test_agent_start_event_creation(self):
+        """AgentStartEvent can be created with type field."""
+        from pi_agent_core.types import AgentStartEvent
+
+        event: AgentStartEvent = {"type": "agent_start"}
+        assert event["type"] == "agent_start"
+
+    def test_agent_end_event_creation(self):
+        """AgentEndEvent can be created with messages field."""
+        from pi_agent_core.types import AgentEndEvent
+
+        event: AgentEndEvent = {
+            "type": "agent_end",
+            "messages": []
+        }
+        assert event["type"] == "agent_end"
+        assert event["messages"] == []
+
+    def test_turn_start_event_creation(self):
+        """TurnStartEvent can be created with type field."""
+        from pi_agent_core.types import TurnStartEvent
+
+        event: TurnStartEvent = {"type": "turn_start"}
+        assert event["type"] == "turn_start"
+
+    def test_turn_end_event_creation(self):
+        """TurnEndEvent can be created with message and tool_results."""
+        from pi_agent_core.types import TurnEndEvent
+
+        event: TurnEndEvent = {
+            "type": "turn_end",
+            "message": {"role": "assistant", "content": []},
+            "tool_results": []
+        }
+        assert event["type"] == "turn_end"
+        assert event["message"]["role"] == "assistant"
+        assert event["tool_results"] == []
+
+    def test_message_start_event_creation(self):
+        """MessageStartEvent can be created with message field."""
+        from pi_agent_core.types import MessageStartEvent
+
+        event: MessageStartEvent = {
+            "type": "message_start",
+            "message": {"role": "assistant", "content": []}
+        }
+        assert event["type"] == "message_start"
+        assert event["message"]["role"] == "assistant"
+
+    def test_message_update_event_creation(self):
+        """MessageUpdateEvent can be created with message and assistant_message_event."""
+        from pi_agent_core.types import MessageUpdateEvent
+
+        event: MessageUpdateEvent = {
+            "type": "message_update",
+            "message": {"role": "assistant", "content": []},
+            "assistant_message_event": {"type": "text", "text": "Hello"}
+        }
+        assert event["type"] == "message_update"
+        assert event["assistant_message_event"]["type"] == "text"
+
+    def test_message_end_event_creation(self):
+        """MessageEndEvent can be created with message field."""
+        from pi_agent_core.types import MessageEndEvent
+
+        event: MessageEndEvent = {
+            "type": "message_end",
+            "message": {"role": "assistant", "content": []}
+        }
+        assert event["type"] == "message_end"
+
+    def test_tool_execution_start_event_creation(self):
+        """ToolExecutionStartEvent can be created with all fields."""
+        from pi_agent_core.types import ToolExecutionStartEvent
+
+        event: ToolExecutionStartEvent = {
+            "type": "tool_execution_start",
+            "tool_call_id": "call_123",
+            "tool_name": "get_weather",
+            "args": {"city": "Beijing"}
+        }
+        assert event["type"] == "tool_execution_start"
+        assert event["tool_call_id"] == "call_123"
+        assert event["tool_name"] == "get_weather"
+        assert event["args"] == {"city": "Beijing"}
+
+    def test_tool_execution_update_event_creation(self):
+        """ToolExecutionUpdateEvent can be created with all fields."""
+        from pi_agent_core.types import ToolExecutionUpdateEvent
+
+        event: ToolExecutionUpdateEvent = {
+            "type": "tool_execution_update",
+            "tool_call_id": "call_123",
+            "tool_name": "get_weather",
+            "args": {"city": "Beijing"},
+            "partial_result": {"temperature": 25}
+        }
+        assert event["type"] == "tool_execution_update"
+        assert event["tool_call_id"] == "call_123"
+        assert event["tool_name"] == "get_weather"
+        assert event["args"] == {"city": "Beijing"}
+        assert event["partial_result"] == {"temperature": 25}
+
+    def test_tool_execution_end_event_creation(self):
+        """ToolExecutionEndEvent can be created with is_error field."""
+        from pi_agent_core.types import ToolExecutionEndEvent
+
+        event: ToolExecutionEndEvent = {
+            "type": "tool_execution_end",
+            "tool_call_id": "call_123",
+            "tool_name": "get_weather",
+            "result": {"temperature": 25, "humidity": 60},
+            "is_error": False
+        }
+        assert event["type"] == "tool_execution_end"
+        assert event["tool_call_id"] == "call_123"
+        assert event["tool_name"] == "get_weather"
+        assert event["result"] == {"temperature": 25, "humidity": 60}
+        assert event["is_error"] is False
+
+    def test_tool_execution_end_event_with_error(self):
+        """ToolExecutionEndEvent can represent an error result."""
+        from pi_agent_core.types import ToolExecutionEndEvent
+
+        event: ToolExecutionEndEvent = {
+            "type": "tool_execution_end",
+            "tool_call_id": "call_456",
+            "tool_name": "divide",
+            "result": "Division by zero",
+            "is_error": True
+        }
+        assert event["is_error"] is True
+        assert event["result"] == "Division by zero"
+
+    def test_agent_event_union_type(self):
+        """AgentEvent union type can hold any event type."""
+        from pi_agent_core.types import AgentEvent, AgentStartEvent, ToolExecutionEndEvent
+
+        start_event: AgentEvent = {"type": "agent_start"}
+        assert start_event["type"] == "agent_start"
+
+        end_event: AgentEvent = {
+            "type": "tool_execution_end",
+            "tool_call_id": "call_789",
+            "tool_name": "test",
+            "result": None,
+            "is_error": False
+        }
+        assert end_event["type"] == "tool_execution_end"
+
+    def test_agent_event_sink_type(self):
+        """AgentEventSink is a callable type for emitting events."""
+        from pi_agent_core.types import AgentEventSink, AgentStartEvent
+
+        received_events = []
+
+        def sink(event: AgentEventSink) -> None:
+            received_events.append(event)
+
+        # Verify the type is callable
+        assert callable(sink)
+
+        # Can be called with an event
+        event: AgentStartEvent = {"type": "agent_start"}
+        sink(event)
+        assert len(received_events) == 1
+        assert received_events[0]["type"] == "agent_start"

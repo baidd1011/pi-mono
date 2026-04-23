@@ -14,6 +14,7 @@ This module defines types for the agent runtime:
 """
 
 from typing import Any, Callable, Awaitable, Optional, Union, Literal, List, FrozenSet
+from typing import TypedDict
 from dataclasses import dataclass
 
 from pi_ai import TextContent, ImageContent, Model
@@ -120,3 +121,93 @@ class AgentContext:
     system_prompt: str
     messages: List[Any]  # List[AgentMessage]
     tools: Optional[List[Any]] = None  # List[AgentTool]
+
+
+# -----------------------------------------------------------------------------
+# Agent Event Types
+# -----------------------------------------------------------------------------
+
+class AgentStartEvent(TypedDict):
+    """Event emitted when agent starts running."""
+    type: Literal["agent_start"]
+
+
+class AgentEndEvent(TypedDict):
+    """Event emitted when agent stops running."""
+    type: Literal["agent_end"]
+    messages: List[Any]  # List[AgentMessage]
+
+
+class TurnStartEvent(TypedDict):
+    """Event emitted at the start of each turn."""
+    type: Literal["turn_start"]
+
+
+class TurnEndEvent(TypedDict):
+    """Event emitted at the end of each turn."""
+    type: Literal["turn_end"]
+    message: Any  # AgentMessage
+    tool_results: List[Any]  # List[ToolResultMessage]
+
+
+class MessageStartEvent(TypedDict):
+    """Event emitted when a new message starts streaming."""
+    type: Literal["message_start"]
+    message: Any  # AgentMessage
+
+
+class MessageUpdateEvent(TypedDict):
+    """Event emitted during message streaming."""
+    type: Literal["message_update"]
+    message: Any  # AgentMessage
+    assistant_message_event: Any  # AssistantMessageEvent
+
+
+class MessageEndEvent(TypedDict):
+    """Event emitted when message streaming completes."""
+    type: Literal["message_end"]
+    message: Any  # AgentMessage
+
+
+class ToolExecutionStartEvent(TypedDict):
+    """Event emitted when tool execution starts."""
+    type: Literal["tool_execution_start"]
+    tool_call_id: str
+    tool_name: str
+    args: Any
+
+
+class ToolExecutionUpdateEvent(TypedDict):
+    """Event emitted during tool execution with partial results."""
+    type: Literal["tool_execution_update"]
+    tool_call_id: str
+    tool_name: str
+    args: Any
+    partial_result: Any
+
+
+class ToolExecutionEndEvent(TypedDict):
+    """Event emitted when tool execution completes."""
+    type: Literal["tool_execution_end"]
+    tool_call_id: str
+    tool_name: str
+    result: Any
+    is_error: bool
+
+
+# Union of all agent events
+AgentEvent = Union[
+    AgentStartEvent,
+    AgentEndEvent,
+    TurnStartEvent,
+    TurnEndEvent,
+    MessageStartEvent,
+    MessageUpdateEvent,
+    MessageEndEvent,
+    ToolExecutionStartEvent,
+    ToolExecutionUpdateEvent,
+    ToolExecutionEndEvent,
+]
+
+# Event sink callback type
+AgentEventSink = Callable[[AgentEvent], None]
