@@ -2,71 +2,66 @@
 pi-agent-core: Agent runtime with state management, tool execution, and event system.
 """
 
-# Tool types
-from pi_agent_core.types import (
-    AgentTool,
-    AgentToolResult,
-    AgentToolCall,
-    ToolExecutionMode,
-    AgentToolUpdateCallback,
-    AgentState,
-    AgentContext,
-    ThinkingLevel,
-    AgentLoopConfig,
-    BeforeToolCallResult,
-    AfterToolCallResult,
-    BeforeToolCallContext,
-    AfterToolCallContext,
-    StreamFn,
-    AgentEvent,
-    AgentEventSink,
-)
-
-# Agent class
-from pi_agent_core.agent import (
-    Agent,
-    AgentOptions,
-    DEFAULT_MODEL,
-)
-
-# Agent loop functions
-from pi_agent_core.agent_loop import (
+from .agent import Agent, AgentOptions, DEFAULT_MODEL, AgentMessage
+from .agent_loop import (
     agent_loop,
     agent_loop_continue,
     run_agent_loop,
     run_agent_loop_continue,
-    AgentEventStream,
+)
+from ._event_stream import AgentEventStream, create_agent_stream
+from ._abort import AbortController, AbortSignal
+from .types import (
+    AgentState,
+    AgentContext,
+    AgentTool,
+    AgentToolResult,
+    AgentToolCall,
+    AgentEvent,
+    ToolExecutionMode,
+    ThinkingLevel,
+    AgentEventSink,
+    StreamFn,
+    AgentLoopConfig,
+    BeforeToolCallContext,
+    BeforeToolCallResult,
+    AfterToolCallContext,
+    AfterToolCallResult,
 )
 
 __version__ = "0.1.0"
 
 __all__ = [
-    # Tool types
-    "AgentTool",
-    "AgentToolResult",
-    "AgentToolCall",
-    "ToolExecutionMode",
-    "AgentToolUpdateCallback",
-    # State types
-    "AgentState",
-    "AgentContext",
-    "ThinkingLevel",
-    "AgentLoopConfig",
-    "BeforeToolCallResult",
-    "AfterToolCallResult",
-    "BeforeToolCallContext",
-    "AfterToolCallContext",
-    "StreamFn",
-    "AgentEvent",
-    "AgentEventSink",
-    # Agent class
+    # Agent
     "Agent",
     "AgentOptions",
     "DEFAULT_MODEL",
-    # Agent loop
+    "AgentMessage",
+    # Loop
     "agent_loop",
     "agent_loop_continue",
     "run_agent_loop",
     "run_agent_loop_continue",
+    "AgentLoopConfig",
+    # Stream
     "AgentEventStream",
+    "create_agent_stream",
+    # Abort
+    "AbortController",
+    "AbortSignal",
+    # Types
+    "AgentState",
+    "AgentContext",
+    "AgentTool",
+    "AgentToolResult",
+    "AgentToolCall",
+    "AgentEvent",
+    "ToolExecutionMode",
+    "ThinkingLevel",
+    "AgentEventSink",
+    "StreamFn",
+    "BeforeToolCallContext",
+    "BeforeToolCallResult",
+    "AfterToolCallContext",
+    "AfterToolCallResult",
 ]

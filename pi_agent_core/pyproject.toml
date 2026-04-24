@@ -1,10 +1,10 @@
 [project]
-name = "pi_agent_core"
+name = "pi-agent-core"
 version = "0.1.0"
-description = "Agent runtime with state management, event system, tool execution"
+description = "Agent runtime with state management, tool execution, and event system"
 requires-python = ">=3.10"
 dependencies = [
-    "pi_ai",
+    "pi-ai>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -14,12 +14,9 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-packages = ["pi_agent_core"]
-package-dir = {"pi_agent_core" = "."}
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
