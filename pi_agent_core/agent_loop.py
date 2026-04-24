@@ -32,42 +32,10 @@ from .types import (
     AfterToolCallContext, AfterToolCallResult,
     ToolExecutionMode,
 )
+from ._event_stream import AgentEventStream, create_agent_stream
 
 # Alias for AgentMessage
 AgentMessage = Message
-
-
-# -----------------------------------------------------------------------------
-# Event Stream Implementation
-# -----------------------------------------------------------------------------
-
-class AgentEventStream(EventStream[AgentEvent, List[AgentMessage]]):
-    """
-    Event stream specialization for agent events.
-
-    Provides typed streaming for agent lifecycle events and collects
-    the final list of messages.
-    """
-
-    def __init__(self) -> None:
-        """Initialize the agent event stream."""
-        super().__init__()
-        self._messages: List[AgentMessage] = []
-
-    def end(self, messages: List[AgentMessage]) -> None:
-        """
-        End the stream with the final message list.
-
-        Args:
-            messages: The final list of agent messages.
-        """
-        self._messages = messages
-        super().end(messages)
-
-
-def create_agent_stream() -> AgentEventStream:
-    """Create a new agent event stream."""
-    return AgentEventStream()
 
 
 # -----------------------------------------------------------------------------
