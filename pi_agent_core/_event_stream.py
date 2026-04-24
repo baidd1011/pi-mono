@@ -5,7 +5,8 @@ This module provides the AgentEventStream class - a specialization
 of EventStream for agent lifecycle events.
 """
 
-from typing import List, Any
+import asyncio
+from typing import List, Optional, Any
 from pi_ai.stream import EventStream
 from pi_ai import Message
 
@@ -37,15 +38,33 @@ class AgentEventStream(EventStream[AgentEvent, List[AgentMessage]]):
         """Initialize the agent event stream."""
         super().__init__()
         self._messages: List[AgentMessage] = []
+        self._task: Optional[asyncio.Task] = None
+
+    def attach_task(self, task: asyncio.Task) -> None:
+        """
+        Attach a background task for cleanup when stream ends.
+
+        If the stream is cancelled or ends before the task completes,
+        the task will be cancelled to prevent orphaned background work.
+
+        Args:
+            task: The asyncio Task to track.
+        """
+        self._task = task
 
     def end(self, messages: List[AgentMessage]) -> None:
         """
         End the stream with the final message list.
 
+        Also cancels any attached background task if still running.
+
         Args:
             messages: The final list of agent messages.
         """
         self._messages = messages
+        # Cancel attached task if stream ends before task completes
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
         super().end(messages)
 
     @property

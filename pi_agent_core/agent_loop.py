@@ -84,8 +84,9 @@ def agent_loop(
             stream.push(error_event)
             stream.end([])
 
-    # Start the async loop in background
-    asyncio.create_task(run())
+    # Start the async loop in background and attach task for cleanup
+    task = asyncio.create_task(run())
+    stream.attach_task(task)
     return stream
 
 
@@ -138,7 +139,8 @@ def agent_loop_continue(
             stream.push(error_event)
             stream.end([])
 
-    asyncio.create_task(run())
+    task = asyncio.create_task(run())
+    stream.attach_task(task)
     return stream
 
 
