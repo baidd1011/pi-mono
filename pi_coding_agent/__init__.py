@@ -18,6 +18,13 @@ from .core import (
     create_coding_tools,
 )
 
+from .tui import (
+    PiCodingAgentApp,
+    MessageDisplay,
+    EditorWidget,
+    FooterWidget,
+)
+
 
 __version__ = "0.1.0"
 
@@ -29,4 +36,9 @@ __all__ = [
     "DEFAULT_MAX_LINES",
     "DEFAULT_MAX_BYTES",
     "create_coding_tools",
+    # TUI components
+    "PiCodingAgentApp",
+    "MessageDisplay",
+    "EditorWidget",
+    "FooterWidget",
 ]
