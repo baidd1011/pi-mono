@@ -164,7 +164,7 @@ class AfterToolCallContext:
 
 
 # Stream function type
-StreamFn = Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]
+StreamFn = Callable[[Context, Model], Awaitable[AssistantMessageEventStream]]
 
 
 @dataclass

@@ -506,7 +506,9 @@ class TestToolExecution:
         elapsed = time.time() - start_time
 
         # Both tools should run concurrently (about 0.1s total, not 0.2s)
-        assert elapsed < 0.3
+        # pytest-asyncio adds overhead; manual test shows ~0.1s for parallel vs ~0.2s for sequential
+        # Threshold accounts for pytest overhead while still distinguishing from sequential
+        assert elapsed < 0.25
 
         # Should have tool execution events
         tool_start_events = [e for e in events if e.get("type") == "tool_execution_start"]

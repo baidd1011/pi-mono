@@ -47,7 +47,7 @@ def agent_loop(
     context: AgentContext,
     config: AgentLoopConfig,
     signal: Optional[AbortSignal] = None,
-    stream_fn: Optional[Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]] = None,
+    stream_fn: Optional[Callable[[Context, Model], Awaitable[AssistantMessageEventStream]]] = None,
 ) -> AgentEventStream:
     """
     Start an agent loop with a new prompt message.
@@ -93,7 +93,7 @@ def agent_loop_continue(
     context: AgentContext,
     config: AgentLoopConfig,
     signal: Optional[AbortSignal] = None,
-    stream_fn: Optional[Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]] = None,
+    stream_fn: Optional[Callable[[Context, Model], Awaitable[AssistantMessageEventStream]]] = None,
 ) -> AgentEventStream:
     """
     Continue an agent loop from the current context without adding a new message.
@@ -152,7 +152,7 @@ async def run_agent_loop(
     config: AgentLoopConfig,
     emit: AgentEventSink,
     signal: Optional[AbortSignal] = None,
-    stream_fn: Optional[Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]] = None,
+    stream_fn: Optional[Callable[[Context, Model], Awaitable[AssistantMessageEventStream]]] = None,
 ) -> List[AgentMessage]:
     """
     Run agent loop and emit events via callback.
@@ -194,7 +194,7 @@ async def run_agent_loop_continue(
     config: AgentLoopConfig,
     emit: AgentEventSink,
     signal: Optional[AbortSignal] = None,
-    stream_fn: Optional[Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]] = None,
+    stream_fn: Optional[Callable[[Context, Model], Awaitable[AssistantMessageEventStream]]] = None,
 ) -> List[AgentMessage]:
     """
     Continue agent loop and emit events via callback.
@@ -243,7 +243,7 @@ async def run_loop(
     config: AgentLoopConfig,
     signal: Optional[AbortSignal],
     emit: AgentEventSink,
-    stream_fn: Optional[Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]] = None,
+    stream_fn: Optional[Callable[[Context, Model], Awaitable[AssistantMessageEventStream]]] = None,
 ) -> None:
     """
     Main loop logic shared by run_agent_loop and run_agent_loop_continue.
@@ -347,7 +347,7 @@ async def stream_assistant_response(
     config: AgentLoopConfig,
     signal: Optional[AbortSignal],
     emit: AgentEventSink,
-    stream_fn: Optional[Callable[[Model, Context], Awaitable[AssistantMessageEventStream]]] = None,
+    stream_fn: Optional[Callable[[Context, Model], Awaitable[AssistantMessageEventStream]]] = None,
 ) -> AssistantMessage:
     """
     Stream an assistant response from the LLM.
@@ -895,18 +895,18 @@ async def execute_tool_calls_parallel(
         else:
             runnable_calls.append(preparation)
 
-    # Execute runnable calls concurrently
-    running_calls = [
-        {"prepared": prepared, "execution": execute_prepared_tool_call(prepared, signal, emit)}
-        for prepared in runnable_calls
-    ]
+    # Execute runnable calls concurrently using asyncio.gather
+    if runnable_calls:
+        executions = await asyncio.gather(*[
+            execute_prepared_tool_call(prepared, signal, emit) for prepared in runnable_calls
+        ])
 
-    for running in running_calls:
-        executed = await running["execution"]
-        result = await finalize_executed_tool_call(
-            context, assistant_message, running["prepared"], executed, config, signal, emit
-        )
-        results.append(result)
+        # Finalize each execution in source order
+        for i, executed in enumerate(executions):
+            result = await finalize_executed_tool_call(
+                context, assistant_message, runnable_calls[i], executed, config, signal, emit
+            )
+            results.append(result)
 
     return results
 
