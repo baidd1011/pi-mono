@@ -633,6 +633,136 @@ class TestSessionManagerPersistence:
             assert header.version == CURRENT_SESSION_VERSION
             assert header.cwd == tmpdir
 
+    def test_leaf_entry_id_persisted_and_restored(self):
+        """leaf_entry_id is persisted and restored correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = SessionManager.create(tmpdir)
+            msg1_id = session.append_message({"role": "user", "content": "First"})
+            msg2_id = session.append_message({"role": "assistant", "content": "Second"})
+            msg3_id = session.append_message({"role": "user", "content": "Third"})
+
+            # Current leaf should be msg3
+            assert session.get_leaf_id() == msg3_id
+
+            session_file = session.get_session_file()
+
+            # Load session and verify leaf position
+            session2 = SessionManager.open(session_file)
+            assert session2.get_leaf_id() == msg3_id
+
+            # Verify header has correct leaf_entry_id
+            header = session2.get_header()
+            assert header.leaf_entry_id == msg3_id
+
+    def test_updated_at_updated_on_append(self):
+        """updated_at timestamp is updated when entries are appended."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = SessionManager.create(tmpdir)
+            header = session.get_header()
+            initial_updated = header.updated_at
+
+            # Append message
+            import time
+            time.sleep(0.01)  # Small delay for timestamp difference
+            session.append_message({"role": "user", "content": "Test"})
+            session.append_message({"role": "assistant", "content": "Response"})
+
+            header = session.get_header()
+            assert header.updated_at > initial_updated
+
+            # Load session and verify updated_at persisted
+            session_file = session.get_session_file()
+            session2 = SessionManager.open(session_file)
+            header2 = session2.get_header()
+            assert header2.updated_at > initial_updated
+
+    def test_leaf_entry_id_updated_on_branch(self):
+        """leaf_entry_id is updated when branch() is called."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = SessionManager.create(tmpdir)
+            msg1_id = session.append_message({"role": "user", "content": "First"})
+            msg2_id = session.append_message({"role": "assistant", "content": "Second"})
+            msg3_id = session.append_message({"role": "user", "content": "Third"})
+
+            # Branch from msg2
+            session.branch(msg2_id)
+            assert session.get_leaf_id() == msg2_id
+
+            header = session.get_header()
+            assert header.leaf_entry_id == msg2_id
+
+            # Append message after branch
+            msg4_id = session.append_message({"role": "assistant", "content": "Fourth"})
+
+            header = session.get_header()
+            assert header.leaf_entry_id == msg4_id
+
+            # Load and verify
+            session_file = session.get_session_file()
+            session2 = SessionManager.open(session_file)
+            assert session2.get_leaf_id() == msg4_id
+
+    def test_leaf_entry_id_updated_on_reset_leaf(self):
+        """leaf_entry_id is updated when reset_leaf() is called."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = SessionManager.create(tmpdir)
+            msg1_id = session.append_message({"role": "user", "content": "First"})
+            msg2_id = session.append_message({"role": "assistant", "content": "Second"})
+
+            # Reset leaf
+            session.reset_leaf()
+            assert session.get_leaf_id() is None
+
+            header = session.get_header()
+            assert header.leaf_entry_id is None
+
+            # Append new root message
+            msg3_id = session.append_message({"role": "user", "content": "New root"})
+            entry3 = session.get_entry(msg3_id)
+            assert entry3.parent_id is None
+
+            header = session.get_header()
+            assert header.leaf_entry_id == msg3_id
+
+    def test_compaction_entries_list_updated(self):
+        """compaction_entries list is updated when compaction is appended."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = SessionManager.create(tmpdir)
+            msg1_id = session.append_message({"role": "user", "content": "First"})
+            msg2_id = session.append_message({"role": "assistant", "content": "Second"})
+
+            # First compaction
+            comp1_id = session.append_compaction(
+                summary="First compaction",
+                first_kept_entry_id=msg1_id,
+                tokens_before=1000,
+            )
+
+            header = session.get_header()
+            assert comp1_id in header.compaction_entries
+
+            # Append more messages
+            msg3_id = session.append_message({"role": "user", "content": "Third"})
+            msg4_id = session.append_message({"role": "assistant", "content": "Fourth"})
+
+            # Second compaction
+            comp2_id = session.append_compaction(
+                summary="Second compaction",
+                first_kept_entry_id=msg3_id,
+                tokens_before=2000,
+            )
+
+            header = session.get_header()
+            assert comp1_id in header.compaction_entries
+            assert comp2_id in header.compaction_entries
+
+            # Load and verify compaction_entries persisted
+            session_file = session.get_session_file()
+            session2 = SessionManager.open(session_file)
+            header2 = session2.get_header()
+            assert comp1_id in header2.compaction_entries
+            assert comp2_id in header2.compaction_entries
+
 
 class TestSessionManagerContext:
     """Tests for building session context."""

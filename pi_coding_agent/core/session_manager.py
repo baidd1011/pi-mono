@@ -510,11 +510,16 @@ class SessionManager:
         self._label_timestamps_by_id.clear()
         self._leaf_id = None
 
+        # Get header's leaf_entry_id if available
+        header_leaf = self._header.leaf_entry_id if self._header else None
+
         for entry in self._file_entries:
             if isinstance(entry, SessionHeader):
                 continue
 
             self._by_id[entry.id] = entry
+
+            # Track last entry as fallback for leaf
             self._leaf_id = entry.id
 
             if isinstance(entry, LabelEntry):
@@ -524,6 +529,47 @@ class SessionManager:
                 else:
                     self._labels_by_id.pop(entry.target_id, None)
                     self._label_timestamps_by_id.pop(entry.target_id, None)
+
+        # Use header's leaf if valid, otherwise use last entry (fallback)
+        if header_leaf and header_leaf in self._by_id:
+            self._leaf_id = header_leaf
+
+    @property
+    def _header(self) -> Optional[SessionHeader]:
+        """Get the session header from file entries."""
+        for entry in self._file_entries:
+            if isinstance(entry, SessionHeader):
+                return entry
+        return None
+
+    def _update_header(self) -> None:
+        """Update header fields and persist if needed.
+
+        Updates:
+        - updated_at timestamp
+        - leaf_entry_id to current leaf position
+        """
+        header = self._header
+        if not header:
+            return
+
+        # Update timestamp
+        header.updated_at = int(datetime.now().timestamp() * 1000)
+
+        # Update leaf position
+        header.leaf_entry_id = self._leaf_id
+
+        # Persist header changes by rewriting file
+        if self._persist and self._session_file and self._flushed:
+            self._rewrite_file_with_header()
+
+    def _rewrite_file_with_header(self) -> None:
+        """Rewrite file with updated header while preserving entries."""
+        if not self._persist or not self._session_file:
+            return
+
+        # Rewrite entire file with updated header
+        self._rewrite_file()
 
     def _rewrite_file(self) -> None:
         """Rewrite entire session file."""
@@ -569,6 +615,7 @@ class SessionManager:
         self._by_id[entry.id] = entry
         self._leaf_id = entry.id
         self._persist_entry(entry)
+        self._update_header()
 
     def _generate_entry_id(self) -> str:
         """Generate a unique entry ID."""
@@ -689,6 +736,10 @@ class SessionManager:
             details=details,
             from_hook=from_hook,
         )
+        # Add compaction entry ID to header's compaction_entries list
+        header = self._header
+        if header:
+            header.compaction_entries.append(entry.id)
         self._append_entry(entry)
         return entry.id
 
@@ -961,6 +1012,7 @@ class SessionManager:
         if branch_from_id not in self._by_id:
             raise ValueError(f"Entry {branch_from_id} not found")
         self._leaf_id = branch_from_id
+        self._update_header()
 
     def reset_leaf(self) -> None:
         """Reset leaf pointer to null (before any entries).
@@ -968,6 +1020,7 @@ class SessionManager:
         The next append will create a new root entry (parentId = null).
         """
         self._leaf_id = None
+        self._update_header()
 
     def create_branched_session(self, leaf_id: str) -> Optional[str]:
         """Create a new session file with path from root to leaf.
