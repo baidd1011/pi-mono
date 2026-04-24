@@ -5,14 +5,14 @@ from typing import Callable, Optional, List, Union, Awaitable, Any, Literal
 from dataclasses import dataclass, field
 
 from pi_ai import (
-    Model, Context, Message, Usage,
+    Model, Context, Message, Usage, UserMessage,
     AssistantMessageEventStream, ImageContent, TextContent,
     stream_simple,
 )
 from ._abort import AbortController, AbortSignal
 from .types import (
     AgentState, AgentContext, AgentTool, AgentToolResult,
-    AgentEvent, ToolExecutionMode, ThinkingLevel,
+    AgentEvent, ToolExecutionMode, ThinkingLevel, AgentLoopConfig,
 )
 
 # Alias Message to AgentMessage for clarity
@@ -276,3 +276,192 @@ class Agent:
         self._state.pending_tool_calls = set()
         self._state.error_message = None
         self.clear_all_queues()
+
+    # -------------------------------------------------------------------------
+    # Prompt and Continue
+    # -------------------------------------------------------------------------
+
+    async def prompt(self, input: Union[str, AgentMessage, List[AgentMessage]], images: Optional[List[ImageContent]] = None) -> None:
+        """
+        Start a new prompt.
+
+        Args:
+            input: The input - can be a string, a single message, or a list of messages.
+            images: Optional images to attach to the prompt (only when input is a string).
+
+        Raises:
+            RuntimeError: If the agent already has an active run.
+        """
+        if self._active_run:
+            raise RuntimeError("Agent already has an active run")
+
+        # Convert input to messages
+        messages: List[AgentMessage] = []
+        if isinstance(input, str):
+            # Convert string to user message
+            content: List[Union[TextContent, ImageContent]] = [TextContent(text=input)]
+            if images:
+                content.extend(images)
+            messages = [UserMessage(role="user", content=content, timestamp=int(asyncio.get_event_loop().time() * 1000))]
+        elif isinstance(input, list):
+            messages = input
+        else:
+            # Single message
+            messages = [input]
+
+        # Add messages to state
+        current_messages = list(self._state.messages) + messages
+        self._state.messages = current_messages
+
+        # Create context
+        context = AgentContext(
+            system_prompt=self._state.system_prompt,
+            messages=current_messages,
+            tools=self._state.tools,
+        )
+
+        # Create abort controller
+        abort_controller = AbortController()
+
+        # Create run promise
+        run_complete: asyncio.Future = asyncio.get_event_loop().create_future()
+
+        self._active_run = {
+            "abort_controller": abort_controller,
+            "promise": run_complete,
+        }
+
+        try:
+            # Import agent loop functions
+            from .agent_loop import run_agent_loop
+
+            # Build config
+            config = AgentLoopConfig(
+                model=self._state.model,
+                convert_to_llm=self.convert_to_llm,
+                transform_context=self.transform_context,
+                get_api_key=self.get_api_key,
+                get_steering_messages=self._get_steering_messages,
+                get_follow_up_messages=self._get_follow_up_messages,
+                tool_execution=self.tool_execution,
+                before_tool_call=self.before_tool_call,
+                after_tool_call=self.after_tool_call,
+            )
+
+            # Create emit callback
+            async def emit(event: AgentEvent) -> None:
+                await self._emit_event(event)
+
+            # Run agent loop
+            result_messages = await run_agent_loop(
+                messages,
+                context,
+                config,
+                emit,
+                abort_controller.signal,
+                self.stream_fn,
+            )
+
+            # Update state with result messages
+            all_messages = list(self._state.messages) + result_messages
+            self._state.messages = all_messages
+
+            run_complete.set_result(None)
+
+        except Exception as e:
+            run_complete.set_exception(e)
+            raise
+        finally:
+            self._active_run = None
+
+    async def continue_(self) -> None:
+        """
+        Continue from the current transcript.
+
+        The last message must be a user message or tool result message.
+        Cannot continue from an assistant message.
+
+        Raises:
+            RuntimeError: If the agent already has an active run.
+            ValueError: If there are no messages or last message is assistant.
+        """
+        if self._active_run:
+            raise RuntimeError("Agent already has an active run")
+
+        # Validate last message
+        current_messages = self._state.messages
+        if not current_messages:
+            raise ValueError("Cannot continue: no messages")
+
+        last_message = current_messages[-1]
+        last_role = getattr(last_message, 'role', None)
+        if last_role == "assistant":
+            raise ValueError("Cannot continue from assistant message")
+
+        # Create context with existing messages
+        context = AgentContext(
+            system_prompt=self._state.system_prompt,
+            messages=current_messages,
+            tools=self._state.tools,
+        )
+
+        # Create abort controller
+        abort_controller = AbortController()
+
+        # Create run promise
+        run_complete: asyncio.Future = asyncio.get_event_loop().create_future()
+
+        self._active_run = {
+            "abort_controller": abort_controller,
+            "promise": run_complete,
+        }
+
+        try:
+            # Import agent loop functions
+            from .agent_loop import run_agent_loop_continue
+
+            # Build config
+            config = AgentLoopConfig(
+                model=self._state.model,
+                convert_to_llm=self.convert_to_llm,
+                transform_context=self.transform_context,
+                get_api_key=self.get_api_key,
+                get_steering_messages=self._get_steering_messages,
+                get_follow_up_messages=self._get_follow_up_messages,
+                tool_execution=self.tool_execution,
+                before_tool_call=self.before_tool_call,
+                after_tool_call=self.after_tool_call,
+            )
+
+            # Create emit callback
+            async def emit(event: AgentEvent) -> None:
+                await self._emit_event(event)
+
+            # Run agent loop continue
+            result_messages = await run_agent_loop_continue(
+                context,
+                config,
+                emit,
+                abort_controller.signal,
+                self.stream_fn,
+            )
+
+            # Update state with result messages
+            all_messages = list(self._state.messages) + result_messages
+            self._state.messages = all_messages
+
+            run_complete.set_result(None)
+
+        except Exception as e:
+            run_complete.set_exception(e)
+            raise
+        finally:
+            self._active_run = None
+
+    async def _get_steering_messages(self) -> List[AgentMessage]:
+        """Get messages from the steering queue."""
+        return self._drain_steering()
+
+    async def _get_follow_up_messages(self) -> List[AgentMessage]:
+        """Get messages from the follow-up queue."""
+        return self._drain_follow_up()

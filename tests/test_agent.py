@@ -820,3 +820,314 @@ class TestAgentOptionsModesFromOptions:
 
         agent = Agent(AgentOptions(follow_up_mode="all"))
         assert agent.follow_up_mode == "all"
+
+
+class TestAgentPromptMethod:
+    """Tests for Agent prompt() method."""
+
+    def test_prompt_throws_when_already_running(self):
+        """prompt() raises RuntimeError when already has active run."""
+        from pi_agent_core.agent import Agent
+        import asyncio
+
+        agent = Agent()
+        # Simulate an active run
+        agent._active_run = {
+            "abort_controller": None,
+            "promise": None,
+        }
+
+        with pytest.raises(RuntimeError, match="already has an active run"):
+            asyncio.run(agent.prompt("Hello"))
+
+    def test_prompt_accepts_string_input(self):
+        """prompt() accepts a string as input."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage
+        import asyncio
+
+        # Create agent with a valid model
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        # Run prompt
+        asyncio.run(agent.prompt("Hello, agent!"))
+
+        # Messages should be updated
+        messages = agent.state.messages
+        assert len(messages) >= 1
+        # First message should be the user prompt
+        first_msg = messages[0]
+        assert hasattr(first_msg, 'role')
+        assert first_msg.role == "user"
+
+    def test_prompt_accepts_single_message(self):
+        """prompt() accepts a single message as input."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage, UserMessage, TextContent
+        import asyncio
+
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        user_msg = UserMessage(
+            role="user",
+            content=[TextContent(text="Single message")],
+            timestamp=1000
+        )
+
+        asyncio.run(agent.prompt(user_msg))
+
+        messages = agent.state.messages
+        assert len(messages) >= 1
+        assert messages[0].role == "user"
+
+    def test_prompt_accepts_message_list(self):
+        """prompt() accepts a list of messages as input."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage, UserMessage, TextContent
+        import asyncio
+
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        messages_input = [
+            UserMessage(role="user", content=[TextContent(text="First")], timestamp=1000),
+            UserMessage(role="user", content=[TextContent(text="Second")], timestamp=2000),
+        ]
+
+        asyncio.run(agent.prompt(messages_input))
+
+        messages = agent.state.messages
+        assert len(messages) >= 2
+        assert messages[0].role == "user"
+        assert messages[1].role == "user"
+
+    def test_prompt_emits_events(self):
+        """prompt() emits agent events to listeners."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage
+        import asyncio
+
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        events_received = []
+
+        def listener(event, signal):
+            events_received.append(event)
+
+        agent.subscribe(listener)
+
+        asyncio.run(agent.prompt("Hello"))
+
+        # Should have received events
+        assert len(events_received) > 0
+        event_types = [e.get("type") for e in events_received]
+        assert "agent_start" in event_types
+        assert "agent_end" in event_types
+
+    def test_prompt_clears_active_run_after_completion(self):
+        """prompt() clears active_run after completion."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage
+        import asyncio
+
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        asyncio.run(agent.prompt("Hello"))
+
+        # Active run should be cleared
+        assert agent._active_run is None
+
+    def test_prompt_clears_active_run_on_error(self):
+        """prompt() clears active_run even on error."""
+        from pi_agent_core.agent import Agent
+        import asyncio
+
+        agent = Agent()
+        # Model is invalid, will likely cause error
+
+        try:
+            asyncio.run(agent.prompt("Hello"))
+        except Exception:
+            pass
+
+        # Active run should be cleared even on error
+        assert agent._active_run is None
+
+
+class TestAgentContinueMethod:
+    """Tests for Agent continue_() method."""
+
+    def test_continue_throws_when_already_running(self):
+        """continue_() raises RuntimeError when already has active run."""
+        from pi_agent_core.agent import Agent
+        import asyncio
+
+        agent = Agent()
+        # Simulate an active run
+        agent._active_run = {
+            "abort_controller": None,
+            "promise": None,
+        }
+
+        with pytest.raises(RuntimeError, match="already has an active run"):
+            asyncio.run(agent.continue_())
+
+    def test_continue_throws_when_no_messages(self):
+        """continue_() raises ValueError when there are no messages."""
+        from pi_agent_core.agent import Agent
+        import asyncio
+
+        agent = Agent()
+
+        with pytest.raises(ValueError, match="no messages"):
+            asyncio.run(agent.continue_())
+
+    def test_continue_throws_when_last_message_is_assistant(self):
+        """continue_() raises ValueError when last message is assistant."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import AssistantMessage, Usage, UserMessage, TextContent
+        import asyncio
+
+        agent = Agent()
+
+        # Set up messages ending with assistant
+        user_msg = UserMessage(role="user", content=[TextContent(text="Hello")], timestamp=1000)
+        assistant_msg = AssistantMessage(
+            content=[TextContent(text="Response")],
+            api="faux", provider="faux", model="faux-model",
+            response_id=None,
+            usage=Usage(input_tokens=0, output_tokens=0, cache_read_tokens=0, cache_write_tokens=0, total_tokens=0,
+                        cost=Usage.Cost(input=0.0, output=0.0, total=0.0)),
+            stop_reason="stop",
+            timestamp=2000
+        )
+
+        agent.set_messages([user_msg, assistant_msg])
+
+        with pytest.raises(ValueError, match="Cannot continue from assistant message"):
+            asyncio.run(agent.continue_())
+
+    def test_continue_from_user_message(self):
+        """continue_() works when last message is user."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage, UserMessage, TextContent
+        import asyncio
+
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        # Set up messages ending with user message
+        user_msg = UserMessage(role="user", content=[TextContent(text="Hello")], timestamp=1000)
+        agent.set_messages([user_msg])
+
+        asyncio.run(agent.continue_())
+
+        # Should have added assistant response
+        messages = agent.state.messages
+        assert len(messages) >= 2
+        # Last message should be assistant
+        assert messages[-1].role == "assistant"
+
+    def test_continue_emits_events(self):
+        """continue_() emits agent events to listeners."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage, UserMessage, TextContent
+        import asyncio
+
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        user_msg = UserMessage(role="user", content=[TextContent(text="Hello")], timestamp=1000)
+        agent.set_messages([user_msg])
+
+        events_received = []
+
+        def listener(event, signal):
+            events_received.append(event)
+
+        agent.subscribe(listener)
+
+        asyncio.run(agent.continue_())
+
+        # Should have received events
+        assert len(events_received) > 0
+        event_types = [e.get("type") for e in events_received]
+        assert "agent_start" in event_types
+        assert "agent_end" in event_types
+
+    def test_continue_clears_active_run_after_completion(self):
+        """continue_() clears active_run after completion."""
+        from pi_agent_core.agent import Agent
+        from pi_ai import Model, Usage, UserMessage, TextContent
+        import asyncio
+
+        model = Model(
+            id="faux-model", name="Faux Model", api="faux", provider="faux",
+            base_url="", reasoning=False, input=["text"],
+            cost=Usage.Cost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+            context_window=1000, max_tokens=100,
+        )
+
+        agent = Agent()
+        agent.set_model(model)
+
+        user_msg = UserMessage(role="user", content=[TextContent(text="Hello")], timestamp=1000)
+        agent.set_messages([user_msg])
+
+        asyncio.run(agent.continue_())
+
+        # Active run should be cleared
+        assert agent._active_run is None
