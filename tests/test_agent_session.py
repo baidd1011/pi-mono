@@ -11,14 +11,14 @@ class TestAgentSessionCreation:
 
     def test_agent_session_creation_with_defaults(self):
         """AgentSession can be created with default configuration."""
-        from pi_coding_agent import AgentSession
+        from pi_coding_agent import AgentSession, DEFAULT_SYSTEM_PROMPT
 
         with tempfile.TemporaryDirectory() as workspace:
             session = AgentSession(workspace)
             state = session.state
 
             assert session.workspace_dir == Path(workspace)
-            assert state.system_prompt == ""
+            assert state.system_prompt == DEFAULT_SYSTEM_PROMPT
             assert state.thinking_level == "off"
             assert state.is_streaming is False
             assert state.streaming_message is None

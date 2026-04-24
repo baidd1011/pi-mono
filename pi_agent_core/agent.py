@@ -302,12 +302,15 @@ class Agent:
             content: List[Union[TextContent, ImageContent]] = [TextContent(text=input)]
             if images:
                 content.extend(images)
-            messages = [UserMessage(role="user", content=content, timestamp=int(asyncio.get_event_loop().time() * 1000))]
+            messages = [UserMessage(role="user", content=content, timestamp=int(asyncio.get_running_loop().time() * 1000))]
         elif isinstance(input, list):
             messages = input
         else:
             # Single message
             messages = [input]
+
+        # Save original messages for rollback on error
+        original_messages = list(self._state.messages)
 
         # Add messages to state
         current_messages = list(self._state.messages) + messages
@@ -324,7 +327,7 @@ class Agent:
         abort_controller = AbortController()
 
         # Create run promise
-        run_complete: asyncio.Future = asyncio.get_event_loop().create_future()
+        run_complete: asyncio.Future = asyncio.get_running_loop().create_future()
 
         self._active_run = {
             "abort_controller": abort_controller,
@@ -369,6 +372,8 @@ class Agent:
             run_complete.set_result(None)
 
         except Exception as e:
+            # Rollback messages on error
+            self._state.messages = original_messages
             run_complete.set_exception(e)
             raise
         finally:
@@ -409,7 +414,7 @@ class Agent:
         abort_controller = AbortController()
 
         # Create run promise
-        run_complete: asyncio.Future = asyncio.get_event_loop().create_future()
+        run_complete: asyncio.Future = asyncio.get_running_loop().create_future()
 
         self._active_run = {
             "abort_controller": abort_controller,
@@ -453,6 +458,8 @@ class Agent:
             run_complete.set_result(None)
 
         except Exception as e:
+            # Rollback messages on error
+            self._state.messages = original_messages
             run_complete.set_exception(e)
             raise
         finally:

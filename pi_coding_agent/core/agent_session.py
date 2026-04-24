@@ -58,8 +58,9 @@ class AgentSession:
         self._tools = create_coding_tools(str(self.workspace_dir))
         self._agent.set_tools(self._tools)
 
-        # Set default model
+        # Set default model and system prompt
         self._agent.set_model(self._model)
+        self._agent.set_system_prompt(DEFAULT_SYSTEM_PROMPT)
 
         # Session state
         if session_dir:
@@ -126,11 +127,10 @@ class AgentSession:
         message = UserMessage(
             role="user",
             content=content,
-            timestamp=int(asyncio.get_event_loop().time() * 1000),
+            timestamp=int(asyncio.get_running_loop().time() * 1000),
         )
 
-        # Set system prompt and call agent.prompt
-        self._agent.set_system_prompt(DEFAULT_SYSTEM_PROMPT)
+        # Call agent.prompt
         await self._agent.prompt(message)
 
     async def continue_(self) -> None:
